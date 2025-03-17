@@ -105,53 +105,72 @@ if uploaded_bim and uploaded_dax:
 
             st.success("Files processed successfully!")
 
-            df = pd.DataFrame(doc_info)
-            st.subheader("Model Metadata")
-            st.table(df)
+            tab1, tab2, tab3, tab4, tab5 = st.tabs(["Model Metadata", "Tables Metadata", "Columns Metadata", "Measures Metadata", "Relationships Metadata"])
 
-            table_df = pd.DataFrame(merged_table_data)
-            st.subheader("Tables Metadata")
-            selected_mode = st.selectbox("Filter by Mode", ["All"] + table_df['Mode'].unique().tolist())
-            if selected_mode != "All":
-                table_df = table_df[table_df['Mode'] == selected_mode]
-            st.dataframe(table_df)
+            with tab1:
+                df = pd.DataFrame(doc_info)
+                st.dataframe(df)
 
-            columns_df = pd.DataFrame(columns_data)
-            st.subheader("Columns Metadata")
-            col1, col2, col3 = st.columns(3)
-            with col1:
-                selected_column_table = st.selectbox("Filter by Table Name", ["All"] + columns_df['TableName'].unique().tolist())
-            with col2:
-                selected_datatype = st.selectbox("Filter by DataType", ["All"] + columns_df['DataType'].unique().tolist())
-            with col3:
-                selected_displayfolder = st.selectbox("Filter by Display Folder", ["All"] + columns_df['DisplayFolder'].unique().tolist())
-            
-            if selected_column_table != "All":
-                columns_df = columns_df[columns_df['TableName'] == selected_column_table]
-            if selected_datatype != "All":
-                columns_df = columns_df[columns_df['DataType'] == selected_datatype]
-            if selected_displayfolder != "All":
-                columns_df = columns_df[columns_df['DisplayFolder'] == selected_displayfolder]
-            st.dataframe(columns_df)
+            with tab2:
+                table_df = pd.DataFrame(merged_table_data)
+                selected_mode = st.selectbox("Filter by Mode", ["All"] + table_df['Mode'].unique().tolist())
+                if selected_mode != "All":
+                    table_df = table_df[table_df['Mode'] == selected_mode]
+                st.dataframe(table_df)
 
-            measures_df = pd.DataFrame(measures_data)
-            st.subheader("Measures Metadata")
-            st.dataframe(measures_df)
+            with tab3:
+                columns_df = pd.DataFrame(columns_data)
+                col1, col2, col3 = st.columns(3)
+                with col1:
+                    selected_column_table = st.selectbox("Filter by Table Name", ["All"] + columns_df['TableName'].unique().tolist())
+                with col2:
+                    selected_datatype = st.selectbox("Filter by DataType", ["All"] + columns_df['DataType'].unique().tolist())
+                with col3:
+                    selected_displayfolder = st.selectbox("Filter by Display Folder", ["All"] + columns_df['DisplayFolder'].unique().tolist())
 
-            relationships_df = pd.DataFrame(relationships_data)
-            st.subheader("Relationships Metadata")
-            col1, col2 = st.columns(2)
-            with col1:
-                selected_relationship_table = st.selectbox("Filter by Table Name", ["All"] + relationships_df['FromTableName'].unique().tolist())
-            with col2:
-                selected_cardinality = st.selectbox("Filter by Cardinality", ["All"] + relationships_df['cardinality'].unique().tolist())
-            
-            if selected_relationship_table != "All":
-                relationships_df = relationships_df[(relationships_df['FromTableName'] == selected_relationship_table) | (relationships_df['ToTableName'] == selected_relationship_table)]
-            if selected_cardinality != "All":
-                relationships_df = relationships_df[relationships_df['cardinality'] == selected_cardinality]
+                if selected_column_table != "All":
+                    columns_df = columns_df[columns_df['TableName'] == selected_column_table]
+                if selected_datatype != "All":
+                    columns_df = columns_df[columns_df['DataType'] == selected_datatype]
+                if selected_displayfolder != "All":
+                    columns_df = columns_df[columns_df['DisplayFolder'] == selected_displayfolder]
+                st.dataframe(columns_df)
 
-            st.dataframe(relationships_df)
+            with tab4:
+                measures_df = pd.DataFrame(measures_data)
+                col1, col2, col3 = st.columns(3)
+                with col1:
+                    selected_measure_table = st.selectbox("Filter by Table Name", ["All"] + measures_df['TableName'].unique().tolist())
+                with col2:
+                    selected_measure_name = st.selectbox("Filter by Measure Name", ["All"] + measures_df['MeasureName'].unique().tolist())
+                with col3:
+                    search_expression = st.text_input("Search Expression").strip()
+
+                if selected_measure_table != "All":
+                    measures_df = measures_df[measures_df['TableName'] == selected_measure_table]
+                if selected_measure_name != "All":
+                    measures_df = measures_df[measures_df['MeasureName'] == selected_measure_name]
+                if search_expression:
+                    escaped_expression = re.escape(search_expression)
+                    measures_df = measures_df[measures_df['MeasureExpression'].str.contains(escaped_expression, case=False, na=False)]
+
+                st.dataframe(measures_df)
+
+            with tab5:
+                relationships_df = pd.DataFrame(relationships_data)
+                col1, col2 = st.columns(2)
+                with col1:
+                    all_tables = sorted(set(relationships_df['FromTableName'].tolist() + relationships_df['ToTableName'].tolist()))
+                    selected_relationship_table = st.selectbox("Filter by Table Name", ["All"] + all_tables)
+                with col2:
+                    selected_cardinality = st.selectbox("Filter by Cardinality", ["All"] + relationships_df['cardinality'].unique().tolist())
+
+                if selected_relationship_table != "All":
+                    relationships_df = relationships_df[(relationships_df['FromTableName'] == selected_relationship_table) | (relationships_df['ToTableName'] == selected_relationship_table)]
+                if selected_cardinality != "All":
+                    relationships_df = relationships_df[relationships_df['cardinality'] == selected_cardinality]
+
+                st.dataframe(relationships_df)
 
     except Exception as e:
         st.error(f"Error processing file: {e}")
