@@ -1,6 +1,7 @@
 import streamlit as st
 import json
 import pandas as pd
+import re
 
 def parse_model_bim(file):
     data = json.load(file)
@@ -73,7 +74,6 @@ def parse_dax_vpa_view(file):
     measures_data = data.get("Measures", [])
     relationships_data = data.get("Relationships", [])
     
-    # Add custom relationship columns
     for rel in relationships_data:
         rel["from"] = f"{rel['FromTableName']}.{rel['FromFullColumnName']}"
         rel["to"] = f"{rel['ToTableName']}.{rel['ToFullColumnName']}"
@@ -101,34 +101,56 @@ if uploaded_bim and uploaded_dax:
             doc_info, table_data = parse_model_bim(bim_file)
             dax_table_data, columns_data, measures_data, relationships_data = parse_dax_vpa_view(dax_file)
 
-            # Merging metadata
             merged_table_data = merge_metadata(table_data, dax_table_data)
 
             st.success("Files processed successfully!")
 
-            # Display Model Metadata
             df = pd.DataFrame(doc_info)
             st.subheader("Model Metadata")
             st.table(df)
 
-            # Display Tables Metadata
             table_df = pd.DataFrame(merged_table_data)
             st.subheader("Tables Metadata")
+            selected_mode = st.selectbox("Filter by Mode", ["All"] + table_df['Mode'].unique().tolist())
+            if selected_mode != "All":
+                table_df = table_df[table_df['Mode'] == selected_mode]
             st.dataframe(table_df)
 
-            # Display Columns Metadata
             columns_df = pd.DataFrame(columns_data)
             st.subheader("Columns Metadata")
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                selected_column_table = st.selectbox("Filter by Table Name", ["All"] + columns_df['TableName'].unique().tolist())
+            with col2:
+                selected_datatype = st.selectbox("Filter by DataType", ["All"] + columns_df['DataType'].unique().tolist())
+            with col3:
+                selected_displayfolder = st.selectbox("Filter by Display Folder", ["All"] + columns_df['DisplayFolder'].unique().tolist())
+            
+            if selected_column_table != "All":
+                columns_df = columns_df[columns_df['TableName'] == selected_column_table]
+            if selected_datatype != "All":
+                columns_df = columns_df[columns_df['DataType'] == selected_datatype]
+            if selected_displayfolder != "All":
+                columns_df = columns_df[columns_df['DisplayFolder'] == selected_displayfolder]
             st.dataframe(columns_df)
 
-            # Display Measures Metadata
             measures_df = pd.DataFrame(measures_data)
             st.subheader("Measures Metadata")
             st.dataframe(measures_df)
 
-            # Display Relationships Metadata
             relationships_df = pd.DataFrame(relationships_data)
             st.subheader("Relationships Metadata")
+            col1, col2 = st.columns(2)
+            with col1:
+                selected_relationship_table = st.selectbox("Filter by Table Name", ["All"] + relationships_df['FromTableName'].unique().tolist())
+            with col2:
+                selected_cardinality = st.selectbox("Filter by Cardinality", ["All"] + relationships_df['cardinality'].unique().tolist())
+            
+            if selected_relationship_table != "All":
+                relationships_df = relationships_df[(relationships_df['FromTableName'] == selected_relationship_table) | (relationships_df['ToTableName'] == selected_relationship_table)]
+            if selected_cardinality != "All":
+                relationships_df = relationships_df[relationships_df['cardinality'] == selected_cardinality]
+
             st.dataframe(relationships_df)
 
     except Exception as e:
