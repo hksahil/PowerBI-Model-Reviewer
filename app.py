@@ -2,20 +2,10 @@ import streamlit as st
 import json
 import pandas as pd
 import re
-import networkx as nx  # New import for visualizing relationships
-import matplotlib.pyplot as plt  # New import for plotting
-import plotly.graph_objects as go
-import dash
-import dash_cytoscape as cyto
-from dash import html
-import holoviews as hv
-from holoviews import opts
-from bokeh.io import show
-from bokeh.models import GraphRenderer, StaticLayoutProvider, Circle, LabelSet, ColumnDataSource
-from bokeh.plotting import figure
-from bokeh.layouts import column
-from pyvis.network import Network
 import os
+import zipfile
+import openai  # Correct import for OpenAI API
+import time
 
 st.set_page_config(layout="wide")
 
@@ -34,7 +24,7 @@ def calculate_metadata(tables):
         max_row_count = max(max_row_count, table_row_count)
 
         expression = partitions[0].get("source", {}).get("expression", "") if partitions else ""
-        
+
         table_metadata.append({
             "Table Name": table.get("name", "Unknown"),
             "Mode": partitions[0].get("mode", "Unknown") if partitions else "Unknown",
@@ -47,7 +37,7 @@ def calculate_metadata(tables):
             "Latest Partition Refreshed": max(p.get("refreshedTime", "Unknown") for p in partitions) if partitions else "Unknown",
             "Lineage Tag": table.get("lineageTag", "Unknown")
         })
-        
+
         # Store expressions data separately for the new tab
         expressions_data.append({
             "Table Name": table.get("name", "Unknown"),
@@ -118,7 +108,7 @@ def display_expressions(expressions_data):
     # Create a dropdown for table selection
     tables = [expr["Table Name"] for expr in expressions_data]
     selected_table = st.selectbox("Select Table", ["All"] + tables)
-    
+
     if selected_table == "All":
         # Display all expressions
         for expr in expressions_data:
@@ -133,28 +123,95 @@ def display_expressions(expressions_data):
                 st.subheader(expr["Table Name"])
                 st.code(expr["Expression"], language="m")
 
+def ask_gpt(merged_table_data, columns_data, measures_data, expressions_data):
+    """Function to handle user questions and interact with OpenAI API."""
+    st.header("Ask GPT")
+    user_question = st.text_input("Enter your question:")
+    api_key = st.text_input("Enter your OpenAI API Key:", type="password")  # Password input for security
+    if st.button("Get Answer"):
+        if api_key and user_question:
+            openai.api_key = api_key
+            # Prepare the context for the question
+            context = {
+                "merged_table_data": merged_table_data,
+                "columns_data": columns_data,
+                "measures_data": measures_data,
+                "expressions_data": expressions_data
+            }
+            # Generate a prompt for GPT
+            prompt = f"Based on the following data:\n{context}\n\nUser question: {user_question}\n\nAnswer:"
+            response = openai.ChatCompletion.create(
+                model="gpt-3.5-turbo",  # Specify the model
+                messages=[{"role": "user", "content": prompt}]
+            )
+            answer = response['choices'][0]['message']['content']
+            st.write(answer)
+        else:
+            st.error("Please enter both your question and API key.")
+
 # Streamlit UI
-st.title("Power BI Model Documentation")
-st.write("Upload `model.bim` and `DaxVpaView.json` files to generate documentation.")
+def main():
+    st.title("Power BI Model Documentation")
+    st.write("Upload `model.bim` and `DaxVpaView.json` files to generate documentation.")
 
-uploaded_bim = st.file_uploader("Upload model.bim", type=["bim"])
-uploaded_dax = st.file_uploader("Upload DaxVpaView.json", type=["json"])
+    uploaded_vpax = st.file_uploader("Upload vpax file", type=["vpax"])
 
-if uploaded_bim and uploaded_dax:
-    try:
-        doc_info, table_data, expressions_data = parse_model_bim(uploaded_bim)
-        dax_table_data, columns_data, measures_data, relationships_data = parse_dax_vpa_view(uploaded_dax)
-        merged_table_data = merge_metadata(table_data, dax_table_data)
+    if uploaded_vpax:
+        try:
+            # Extract files from the vpax zip file
+            with zipfile.ZipFile(uploaded_vpax, 'r') as zip_ref:
+                zip_ref.extractall("extracted_files")  # Extract to a temporary directory
+                # Load the specific files
+                with open("extracted_files/model.bim", encoding='utf-8-sig') as bim_file:
+                    doc_info, table_data, expressions_data = parse_model_bim(bim_file)
+                with open("extracted_files/DaxVpaView.json", encoding='utf-8-sig') as dax_file:
+                    dax_table_data, columns_data, measures_data, relationships_data = parse_dax_vpa_view(dax_file)
 
-        st.success("Files processed successfully!")
+            merged_table_data = merge_metadata(table_data, dax_table_data)
 
-        tab1, tab2, tab3, tab4, tab5 = st.tabs(["Model Metadata", "Tables Metadata", "Columns Metadata", "Measures Metadata", "Table Expressions"])
+            # Temporary success message
+            success_message = st.empty()  # Create an empty container for the message
+            success_message.success("Files processed successfully!")
+            time.sleep(3)  # Wait for 3 seconds
+            success_message.empty()  # Clear the message
 
-        with tab1: st.dataframe(pd.DataFrame(doc_info))
-        with tab2: display_data(tab2, merged_table_data, {"Mode": merged_table_data})
-        with tab3: display_data(tab3, columns_data, {"TableName": columns_data, "DataType": columns_data, "DisplayFolder": columns_data})
-        with tab4: display_data(tab4, measures_data, {"TableName": measures_data, "MeasureName": measures_data}, expression_filter="MeasureExpression")
-        with tab5: display_expressions(expressions_data)
+            # Streamlit tabs
+            tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs(["Model Metadata", "Tables Metadata", "Columns Metadata", "Measures Metadata", "Table Expressions", "Ask GPT", "Relationships"])
 
-    except Exception as e:
-        st.error(f"Error processing file: {e}")
+            with tab1: st.dataframe(pd.DataFrame(doc_info))
+            with tab2: 
+                # Remove the "Lineage Tag" column from Tables Metadata
+                tables_df = pd.DataFrame(merged_table_data).drop(columns=["Lineage Tag"], errors='ignore')
+                display_data(tab2, tables_df, {"Mode": tables_df})
+            with tab3: 
+                # Remove the specified columns from Columns Metadata
+                columns_df = pd.DataFrame(columns_data).drop(columns=["EncodingHint", "State", "isRowNumber"], errors='ignore')
+                display_data(tab3, columns_df, {"TableName": columns_df, "DataType": columns_df, "DisplayFolder": columns_df})
+            with tab4: 
+                measures_df = pd.DataFrame(measures_data)
+                st.subheader("Measures Metadata")
+                st.dataframe(measures_df)
+            with tab5: 
+                display_expressions(expressions_data)
+            with tab6: 
+                ask_gpt(merged_table_data, columns_data, measures_data, expressions_data)  # Call the ask_gpt function
+            with tab7:  # Relationships tab
+                relationships_df = pd.DataFrame(relationships_data).drop(columns=["RelationshipName", "cardinality"], errors='ignore')
+                st.subheader("Relationships Metadata")
+                col1, col2 = st.columns(2)
+                with col1:
+                    selected_relationship_table = st.selectbox("Filter by Table Name", ["All"] + relationships_df['FromTableName'].unique().tolist())
+                with col2:
+                    # Removed cardinality filter since it's no longer in the DataFrame
+                    selected_cardinality = st.selectbox("Filter by Cardinality", ["All"])  # Only "All" option now
+                
+                if selected_relationship_table != "All":
+                    relationships_df = relationships_df[(relationships_df['FromTableName'] == selected_relationship_table) | (relationships_df['ToTableName'] == selected_relationship_table)]
+
+                st.dataframe(relationships_df)
+
+        except Exception as e:
+            st.error(f"Error processing file: {e}")
+
+if __name__ == "__main__":
+    main()
