@@ -6,6 +6,7 @@ import os
 import zipfile
 import openai  # Correct import for OpenAI API
 import time
+from streamlit_react_flow import react_flow  # Import the react_flow component
 
 st.set_page_config(layout="wide")
 
@@ -151,8 +152,8 @@ def ask_gpt(merged_table_data, columns_data, measures_data, expressions_data):
 
 # Streamlit UI
 def main():
-    st.title("Power BI Model Documentation")
-    st.write("Upload `model.bim` and `DaxVpaView.json` files to generate documentation.")
+    st.title("👨🏻‍💻 Power BI Personal Assistant")
+    st.write("Upload `.vpax` files to generate documentation.")
 
     uploaded_vpax = st.file_uploader("Upload vpax file", type=["vpax"])
 
@@ -176,9 +177,22 @@ def main():
             success_message.empty()  # Clear the message
 
             # Streamlit tabs
-            tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs(["Model Metadata", "Tables Metadata", "Columns Metadata", "Measures Metadata", "Table Expressions", "Ask GPT", "Relationships"])
+            tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8 = st.tabs(["Model Metadata", "Tables Metadata", "Columns Metadata", "Measures Metadata", "Table Expressions", "Ask GPT", "Relationships", "Relationship Visualizer"])
 
-            with tab1: st.dataframe(pd.DataFrame(doc_info))
+            with tab1: 
+                st.subheader("Model Metadata")
+                
+                # Display model information in a more fancy way
+                for attribute, value in zip(doc_info['Attribute'], doc_info['Value']):
+                    col1, col2 = st.columns([1, 3])  # Create two columns
+                    with col1:
+                        st.markdown(f"**{attribute}:**")  # Bold attribute name
+                    with col2:
+                        st.write(value)  # Display the value
+
+                # Alternatively, you can use an expander for more details
+                with st.expander("View Detailed Model Information"):
+                    st.write(doc_info)
             with tab2: 
                 # Remove the "Lineage Tag" column from Tables Metadata
                 tables_df = pd.DataFrame(merged_table_data).drop(columns=["Lineage Tag"], errors='ignore')
@@ -188,9 +202,38 @@ def main():
                 columns_df = pd.DataFrame(columns_data).drop(columns=["EncodingHint", "State", "isRowNumber"], errors='ignore')
                 display_data(tab3, columns_df, {"TableName": columns_df, "DataType": columns_df, "DisplayFolder": columns_df})
             with tab4: 
-                measures_df = pd.DataFrame(measures_data)
                 st.subheader("Measures Metadata")
-                st.dataframe(measures_df)
+                measures_df = pd.DataFrame(measures_data)
+                
+                # Create filter options
+                filter_options = {
+                    "MeasureName": measures_df['MeasureName'].unique(),
+                    "TableName": measures_df['TableName'].unique(),
+                    "DataType": measures_df['DataType'].unique()
+                }
+
+                # Create filter columns
+                filter_cols = st.columns(len(filter_options))
+                filtered_df = measures_df
+
+                for idx, (key, options) in enumerate(filter_options.items()):
+                    selected_option = filter_cols[idx].selectbox(f"Filter by {key}", ["All"] + options.tolist())
+                    if selected_option != "All":
+                        filtered_df = filtered_df[filtered_df[key] == selected_option]
+
+                # Check if 'MeasureExpression' column exists before adding the search bar
+                if 'MeasureExpression' in measures_df.columns:
+                    # Add search bar for MeasureExpression
+                    search_expression = st.text_input("Search Measure Expression", "")
+                    if search_expression:
+                        # Escape the search expression to handle special characters
+                        escaped_expression = re.escape(search_expression)
+                        # Perform case-insensitive search
+                        filtered_df = filtered_df[filtered_df['MeasureExpression'].str.contains(escaped_expression, case=False, na=False)]
+                else:
+                    st.warning("The 'MeasureExpression' column does not exist in the measures data.")
+
+                st.dataframe(filtered_df)
             with tab5: 
                 display_expressions(expressions_data)
             with tab6: 
@@ -209,6 +252,36 @@ def main():
                     relationships_df = relationships_df[(relationships_df['FromTableName'] == selected_relationship_table) | (relationships_df['ToTableName'] == selected_relationship_table)]
 
                 st.dataframe(relationships_df)
+            with tab8:  # Relationship Visualizer tab
+                st.subheader("Relationship Visualizer")
+                
+                # Prepare elements for the flow diagram
+                elements = []
+                for rel in relationships_data:
+                    from_node = {
+                        "id": rel['FromTableName'],
+                        "data": {"label": rel['FromTableName']},
+                        "position": {"x": 100, "y": 100},  # Adjust positions as needed
+                        "type": "input"
+                    }
+                    to_node = {
+                        "id": rel['ToTableName'],
+                        "data": {"label": rel['ToTableName']},
+                        "position": {"x": 300, "y": 100},  # Adjust positions as needed
+                        "type": "output"
+                    }
+                    elements.append(from_node)
+                    elements.append(to_node)
+                    elements.append({
+                        "id": f"e-{rel['FromTableName']}-{rel['ToTableName']}",
+                        "source": rel['FromTableName'],
+                        "target": rel['ToTableName'],
+                        "animated": True
+                    })
+
+                # Render the flow diagram
+                flow_styles = {"height": 500, "width": 1100}
+                react_flow("relationship-visualizer", elements=elements, flow_styles=flow_styles)
 
         except Exception as e:
             st.error(f"Error processing file: {e}")
