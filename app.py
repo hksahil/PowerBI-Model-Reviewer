@@ -150,7 +150,104 @@ def ask_gpt(merged_table_data, columns_data, measures_data, expressions_data):
         else:
             st.error("Please enter both your question and API key.")
 
-# Streamlit UI
+def prepare_relationship_elements(relationships_data):
+    """Prepare elements for the relationship flow diagram."""
+    elements = []
+    for idx, rel in enumerate(relationships_data):  # Use enumerate to get a unique index
+        from_node = {
+            "id": f"from-{idx}-{rel['FromTableName']}",  # Unique ID for from node
+            "data": {"label": rel['FromTableName']},
+            "position": {"x": 100, "y": 100},  # Adjust positions as needed
+            "type": "input"
+        }
+        to_node = {
+            "id": f"to-{idx}-{rel['ToTableName']}",  # Unique ID for to node
+            "data": {"label": rel['ToTableName']},
+            "position": {"x": 300, "y": 100},  # Adjust positions as needed
+            "type": "output"
+        }
+        elements.append(from_node)
+        elements.append(to_node)
+        elements.append({
+            "id": f"e-{idx}-{rel['FromTableName']}-{rel['ToTableName']}",  # Unique ID for edge
+            "source": from_node["id"],
+            "target": to_node["id"],
+            "animated": True
+        })
+    return elements
+
+def render_relationship_visualizer(elements):
+    """Render the relationship flow diagram."""
+    flow_styles = {"height": 500, "width": 1100}
+    react_flow("relationship-visualizer", elements=elements, flow_styles=flow_styles)
+
+def display_model_metadata(doc_info, relationships_data):
+    """Display the model metadata and the relationship visualizer."""
+    st.subheader("Model Metadata")
+    
+    # Display model information in a more fancy way
+    for attribute, value in zip(doc_info['Attribute'], doc_info['Value']):
+        col1, col2 = st.columns([1, 3])  # Create two columns
+        with col1:
+            st.markdown(f"**{attribute}:**")  # Bold attribute name
+        with col2:
+            st.write(value)  # Display the value
+
+    # Alternatively, you can use an expander for more details
+    with st.expander("View Detailed Model Information"):
+        st.write(doc_info)
+
+    # Relationship Visualizer
+    st.subheader("Relationship Visualizer")
+    
+    # Prepare elements and render the flow diagram
+    elements = prepare_relationship_elements(relationships_data)
+    render_relationship_visualizer(elements)
+
+def display_tables_metadata(merged_table_data):
+    """Display the tables metadata."""
+    tables_df = pd.DataFrame(merged_table_data).drop(columns=["Lineage Tag"], errors='ignore')
+    display_data("Tables Metadata", tables_df, {"Mode": tables_df})
+
+def display_columns_metadata(columns_data):
+    """Display the columns metadata."""
+    columns_df = pd.DataFrame(columns_data).drop(columns=["EncodingHint", "State", "isRowNumber"], errors='ignore')
+    display_data("Columns Metadata", columns_df, {"TableName": columns_df, "DataType": columns_df, "DisplayFolder": columns_df})
+
+def display_measures_metadata(measures_data):
+    """Display the measures metadata."""
+    measures_df = pd.DataFrame(measures_data)
+    
+    # Create filter options
+    filter_options = {
+        "MeasureName": measures_df['MeasureName'].unique(),
+        "TableName": measures_df['TableName'].unique(),
+        "DataType": measures_df['DataType'].unique()
+    }
+
+    # Create filter columns
+    filter_cols = st.columns(len(filter_options))
+    filtered_df = measures_df
+
+    for idx, (key, options) in enumerate(filter_options.items()):
+        selected_option = filter_cols[idx].selectbox(f"Filter by {key}", ["All"] + options.tolist())
+        if selected_option != "All":
+            filtered_df = filtered_df[filtered_df[key] == selected_option]
+
+    # Check if 'MeasureExpression' column exists before adding the search bar
+    if 'MeasureExpression' in measures_df.columns:
+        # Add search bar for MeasureExpression
+        search_expression = st.text_input("Search Measure Expression", "")
+        if search_expression:
+            # Escape the search expression to handle special characters
+            escaped_expression = re.escape(search_expression)
+            # Perform case-insensitive search
+            filtered_df = filtered_df[filtered_df['MeasureExpression'].str.contains(escaped_expression, case=False, na=False)]
+    else:
+        st.warning("The 'MeasureExpression' column does not exist in the measures data.")
+
+    st.dataframe(filtered_df)
+
 def main():
     st.title("👨🏻‍💻 Power BI Assistant")
     st.write("Upload `.vpax` files to generate documentation.")
@@ -177,112 +274,25 @@ def main():
             success_message.empty()  # Clear the message
 
             # Streamlit tabs
-            tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs(["Model Metadata", "Tables Metadata", "Columns Metadata", "Measures Metadata", "Table Expressions", "Ask GPT", "Relationships"])
+            tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(["Model Metadata", "Tables Metadata", "Columns Metadata", "Measures Metadata", "Table Expressions", "Ask GPT"])
 
-            with tab1: 
-                st.subheader("Model Metadata")
-                
-                # Display model information in a more fancy way
-                for attribute, value in zip(doc_info['Attribute'], doc_info['Value']):
-                    col1, col2 = st.columns([1, 3])  # Create two columns
-                    with col1:
-                        st.markdown(f"**{attribute}:**")  # Bold attribute name
-                    with col2:
-                        st.write(value)  # Display the value
+            with tab1:
+                display_model_metadata(doc_info, relationships_data)
 
-                # Alternatively, you can use an expander for more details
-                with st.expander("View Detailed Model Information"):
-                    st.write(doc_info)
+            with tab2:
+                display_tables_metadata(merged_table_data)
 
-                # Relationship Visualizer
-                st.subheader("Relationship Visualizer")
-                
-                # Prepare elements for the flow diagram
-                elements = []
-                for idx, rel in enumerate(relationships_data):  # Use enumerate to get a unique index
-                    from_node = {
-                        "id": f"from-{idx}-{rel['FromTableName']}",  # Unique ID for from node
-                        "data": {"label": rel['FromTableName']},
-                        "position": {"x": 100, "y": 100},  # Adjust positions as needed
-                        "type": "input"
-                    }
-                    to_node = {
-                        "id": f"to-{idx}-{rel['ToTableName']}",  # Unique ID for to node
-                        "data": {"label": rel['ToTableName']},
-                        "position": {"x": 300, "y": 100},  # Adjust positions as needed
-                        "type": "output"
-                    }
-                    elements.append(from_node)
-                    elements.append(to_node)
-                    elements.append({
-                        "id": f"e-{idx}-{rel['FromTableName']}-{rel['ToTableName']}",  # Unique ID for edge
-                        "source": from_node["id"],
-                        "target": to_node["id"],
-                        "animated": True
-                    })
+            with tab3:
+                display_columns_metadata(columns_data)
 
-                # Render the flow diagram
-                flow_styles = {"height": 500, "width": 1100}
-                react_flow("relationship-visualizer", elements=elements, flow_styles=flow_styles)  # Removed layout argument
-            with tab2: 
-                # Remove the "Lineage Tag" column from Tables Metadata
-                tables_df = pd.DataFrame(merged_table_data).drop(columns=["Lineage Tag"], errors='ignore')
-                display_data(tab2, tables_df, {"Mode": tables_df})
-            with tab3: 
-                # Remove the specified columns from Columns Metadata
-                columns_df = pd.DataFrame(columns_data).drop(columns=["EncodingHint", "State", "isRowNumber"], errors='ignore')
-                display_data(tab3, columns_df, {"TableName": columns_df, "DataType": columns_df, "DisplayFolder": columns_df})
-            with tab4: 
-                st.subheader("Measures Metadata")
-                measures_df = pd.DataFrame(measures_data)
-                
-                # Create filter options
-                filter_options = {
-                    "MeasureName": measures_df['MeasureName'].unique(),
-                    "TableName": measures_df['TableName'].unique(),
-                    "DataType": measures_df['DataType'].unique()
-                }
+            with tab4:
+                display_measures_metadata(measures_data)
 
-                # Create filter columns
-                filter_cols = st.columns(len(filter_options))
-                filtered_df = measures_df
-
-                for idx, (key, options) in enumerate(filter_options.items()):
-                    selected_option = filter_cols[idx].selectbox(f"Filter by {key}", ["All"] + options.tolist())
-                    if selected_option != "All":
-                        filtered_df = filtered_df[filtered_df[key] == selected_option]
-
-                # Check if 'MeasureExpression' column exists before adding the search bar
-                if 'MeasureExpression' in measures_df.columns:
-                    # Add search bar for MeasureExpression
-                    search_expression = st.text_input("Search Measure Expression", "")
-                    if search_expression:
-                        # Escape the search expression to handle special characters
-                        escaped_expression = re.escape(search_expression)
-                        # Perform case-insensitive search
-                        filtered_df = filtered_df[filtered_df['MeasureExpression'].str.contains(escaped_expression, case=False, na=False)]
-                else:
-                    st.warning("The 'MeasureExpression' column does not exist in the measures data.")
-
-                st.dataframe(filtered_df)
-            with tab5: 
+            with tab5:
                 display_expressions(expressions_data)
-            with tab6: 
-                ask_gpt(merged_table_data, columns_data, measures_data, expressions_data)  # Call the ask_gpt function
-            with tab7:  # Relationships tab
-                relationships_df = pd.DataFrame(relationships_data).drop(columns=["RelationshipName", "cardinality"], errors='ignore')
-                st.subheader("Relationships Metadata")
-                col1, col2 = st.columns(2)
-                with col1:
-                    selected_relationship_table = st.selectbox("Filter by Table Name", ["All"] + relationships_df['FromTableName'].unique().tolist())
-                with col2:
-                    # Removed cardinality filter since it's no longer in the DataFrame
-                    selected_cardinality = st.selectbox("Filter by Cardinality", ["All"])  # Only "All" option now
-                
-                if selected_relationship_table != "All":
-                    relationships_df = relationships_df[(relationships_df['FromTableName'] == selected_relationship_table) | (relationships_df['ToTableName'] == selected_relationship_table)]
 
-                st.dataframe(relationships_df)
+            with tab6:
+                ask_gpt(merged_table_data, columns_data, measures_data, expressions_data)  # Call the ask_gpt function
 
         except Exception as e:
             st.error(f"Error processing file: {e}")
