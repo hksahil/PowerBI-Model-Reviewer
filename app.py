@@ -152,7 +152,7 @@ def ask_gpt(merged_table_data, columns_data, measures_data, expressions_data):
 
 # Streamlit UI
 def main():
-    st.title("👨🏻‍💻 Power BI Personal Assistant")
+    st.title("👨🏻‍💻 Power BI Assistant")
     st.write("Upload `.vpax` files to generate documentation.")
 
     uploaded_vpax = st.file_uploader("Upload vpax file", type=["vpax"])
@@ -177,7 +177,7 @@ def main():
             success_message.empty()  # Clear the message
 
             # Streamlit tabs
-            tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8 = st.tabs(["Model Metadata", "Tables Metadata", "Columns Metadata", "Measures Metadata", "Table Expressions", "Ask GPT", "Relationships", "Relationship Visualizer"])
+            tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs(["Model Metadata", "Tables Metadata", "Columns Metadata", "Measures Metadata", "Table Expressions", "Ask GPT", "Relationships"])
 
             with tab1: 
                 st.subheader("Model Metadata")
@@ -193,6 +193,37 @@ def main():
                 # Alternatively, you can use an expander for more details
                 with st.expander("View Detailed Model Information"):
                     st.write(doc_info)
+
+                # Relationship Visualizer
+                st.subheader("Relationship Visualizer")
+                
+                # Prepare elements for the flow diagram
+                elements = []
+                for idx, rel in enumerate(relationships_data):  # Use enumerate to get a unique index
+                    from_node = {
+                        "id": f"from-{idx}-{rel['FromTableName']}",  # Unique ID for from node
+                        "data": {"label": rel['FromTableName']},
+                        "position": {"x": 100, "y": 100},  # Adjust positions as needed
+                        "type": "input"
+                    }
+                    to_node = {
+                        "id": f"to-{idx}-{rel['ToTableName']}",  # Unique ID for to node
+                        "data": {"label": rel['ToTableName']},
+                        "position": {"x": 300, "y": 100},  # Adjust positions as needed
+                        "type": "output"
+                    }
+                    elements.append(from_node)
+                    elements.append(to_node)
+                    elements.append({
+                        "id": f"e-{idx}-{rel['FromTableName']}-{rel['ToTableName']}",  # Unique ID for edge
+                        "source": from_node["id"],
+                        "target": to_node["id"],
+                        "animated": True
+                    })
+
+                # Render the flow diagram
+                flow_styles = {"height": 500, "width": 1100}
+                react_flow("relationship-visualizer", elements=elements, flow_styles=flow_styles)  # Removed layout argument
             with tab2: 
                 # Remove the "Lineage Tag" column from Tables Metadata
                 tables_df = pd.DataFrame(merged_table_data).drop(columns=["Lineage Tag"], errors='ignore')
@@ -252,36 +283,6 @@ def main():
                     relationships_df = relationships_df[(relationships_df['FromTableName'] == selected_relationship_table) | (relationships_df['ToTableName'] == selected_relationship_table)]
 
                 st.dataframe(relationships_df)
-            with tab8:  # Relationship Visualizer tab
-                st.subheader("Relationship Visualizer")
-                
-                # Prepare elements for the flow diagram
-                elements = []
-                for rel in relationships_data:
-                    from_node = {
-                        "id": rel['FromTableName'],
-                        "data": {"label": rel['FromTableName']},
-                        "position": {"x": 100, "y": 100},  # Adjust positions as needed
-                        "type": "input"
-                    }
-                    to_node = {
-                        "id": rel['ToTableName'],
-                        "data": {"label": rel['ToTableName']},
-                        "position": {"x": 300, "y": 100},  # Adjust positions as needed
-                        "type": "output"
-                    }
-                    elements.append(from_node)
-                    elements.append(to_node)
-                    elements.append({
-                        "id": f"e-{rel['FromTableName']}-{rel['ToTableName']}",
-                        "source": rel['FromTableName'],
-                        "target": rel['ToTableName'],
-                        "animated": True
-                    })
-
-                # Render the flow diagram
-                flow_styles = {"height": 500, "width": 1100}
-                react_flow("relationship-visualizer", elements=elements, flow_styles=flow_styles)
 
         except Exception as e:
             st.error(f"Error processing file: {e}")
